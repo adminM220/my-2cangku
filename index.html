@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智能相册排版 · 问题修复版</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exif-js@2.3.0/exif.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root { --bg: #0b0f1a; --card-bg: rgba(18,25,45,0.85); --border: #2a3451; --text: #e0e6f0; --text2: #96a9c6; --accent: #0077be; --accent2: #0095e0; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    .header { background: linear-gradient(90deg, #0a1120, #16213e); border-bottom: 1px solid var(--border); padding: 0 20px; display: flex; align-items: center; justify-content: space-between; height: 56px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); z-index: 20; }
+    .logo { display:flex; align-items:center; gap:10px; }
+    .logo i { font-size:26px; color:#00a8ff; }
+    .logo span { font-size:19px; font-weight:600; background:linear-gradient(135deg,#b3e0ff,#7bb3ff); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+    .nav { display:flex; gap:6px; }
+    .nav button { background:transparent; border:none; color:#b0c7e0; padding:7px 16px; border-radius:18px; font-size:13px; cursor:pointer; transition:0.3s; }
+    .nav button:hover { background:rgba(0,168,255,0.15); color:#e0f0ff; }
+    .nav button.on { background:var(--accent); color:#fff; box-shadow:0 0 12px #0077beaa; }
+    .main { flex:1; display:flex; gap:16px; padding:14px 18px; overflow:hidden; }
+    .card { background: var(--card-bg); backdrop-filter: blur(10px); border:1px solid var(--border); border-radius:16px; padding:14px 16px; box-shadow:0 8px 24px rgba(0,0,0,0.4); }
+    .card h3 { font-size:14px; color:#cfdff5; margin-bottom:10px; border-bottom:1px solid #253040; padding-bottom:8px; display:flex; align-items:center; gap:7px; }
+    .sidebar { width:330px; min-width:330px; display:flex; flex-direction:column; gap:12px; overflow-y:auto; }
+    .upload-zone { border:2px dashed var(--border); border-radius:12px; padding:14px; text-align:center; cursor:pointer; background:rgba(255,255,255,0.02); transition:0.3s; color:var(--text2); }
+    .upload-zone:hover { border-color:var(--accent2); background:rgba(0,119,190,0.1); }
+    .photo-list { max-height:140px; overflow-y:auto; background:rgba(255,255,255,0.02); border-radius:10px; padding:4px; border:1px solid #253040; }
+    .photo-item { display:flex; align-items:center; padding:5px 7px; margin:2px 0; background:rgba(255,255,255,0.03); border-radius:8px; font-size:12px; }
+    .photo-item img { width:32px; height:32px; object-fit:cover; border-radius:6px; margin-right:8px; }
+    .photo-item .name { flex:1; color:#cfdff5; }
+    .photo-item .date { font-size:10px; color:#8899bb; }
+    .photo-item .del { background:#5a1e2c; color:#ff8a9a; border:none; border-radius:4px; padding:3px 7px; cursor:pointer; font-size:11px; }
+    .btn { padding:8px 12px; border-radius:8px; font-weight:600; cursor:pointer; border:none; font-size:13px; transition:0.3s; }
+    .btn1 { background:var(--accent); color:#fff; }
+    .btn1:hover { background:var(--accent2); }
+    .btn2 { background:#1f2a3c; color:#cfdff5; border:1px solid #2e3b52; }
+    .btn2:hover { background:#2a3a52; }
+    .btn3 { background:#f39c12; color:#000; font-weight:700; }
+    .btn3:hover { background:#f5b041; }
+    .input, .sel { width:100%; padding:7px 10px; background:#0f172a; border:1px solid #2e3b52; border-radius:7px; color:#e0e6f0; font-size:13px; outline:none; }
+    .input:focus, .sel:focus { border-color:var(--accent); }
+    .page-tabs { display:flex; gap:4px; flex-wrap:wrap; margin:8px 0; }
+    .page-tab { padding:5px 12px; background:rgba(255,255,255,0.05); border-radius:14px; cursor:pointer; font-size:12px; border:1px solid transparent; color:#b0c7e0; }
+    .page-tab.on { background:var(--accent); color:#fff; }
+    .canvas-scroll { flex:1; overflow-y:auto; overflow-x:hidden; background:rgba(18,25,45,0.8); border-radius:16px; border:1px solid var(--border); padding:20px; display:flex; flex-direction:column; align-items:center; gap:30px; }
+    .page-container { background:white; box-shadow:0 0 30px rgba(0,0,0,0.8); position:relative; flex-shrink:0; }
+    .page-label { position:absolute; top:-25px; left:0; color:#8899bb; font-size:13px; font-weight:bold; }
+    .cursor-info { position:fixed; bottom:10px; right:20px; background:rgba(0,0,0,0.8); color:#00ff88; padding:6px 12px; border-radius:6px; font-size:12px; z-index:100; font-family:monospace; }
+    .toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:#16213e; color:#e0f0ff; padding:10px 20px; border-radius:20px; font-size:13px; z-index:99; opacity:0; transition:0.4s; border:1px solid #2e3b52; pointer-events:none; }
+    .toast.show { opacity:1; }
+    .sticker-grid { display:flex; flex-wrap:wrap; gap:6px; }
+    .sticker-grid span { font-size:28px; cursor:pointer; padding:4px; border-radius:8px; transition:0.2s; }
+    .sticker-grid span:hover { background:rgba(0,168,255,0.2); }
+    .preview-grid { display:flex; flex-wrap:wrap; gap:16px; padding:20px; justify-content:center; overflow-y:auto; width:100%; }
+    .preview-page { border:2px solid var(--border); border-radius:10px; overflow:hidden; background:#fff; cursor:pointer; transition:0.3s; text-align:center; }
+    .preview-page:hover { border-color:var(--accent); transform:scale(1.03); }
+    .preview-page canvas { display:block; }
+    .help-modal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center; z-index:9999; }
+    .help-content { background: #16213e; border:2px solid var(--accent); border-radius:20px; padding:30px; max-width:700px; max-height:80vh; overflow-y:auto; color:#e0e6f0; }
+    .help-content h2 { color:#00a8ff; margin-bottom:20px; }
+    .help-content h3 { color:#f39c12; margin:15px 0 8px; }
+    .help-content p, .help-content li { font-size:14px; line-height:1.8; color:#cfdff5; }
+    .help-content kbd { background:#0f172a; padding:2px 8px; border-radius:4px; border:1px solid #2e3b52; font-size:12px; }
+    .highlight-box { background:rgba(0,168,255,0.1); border-left:3px solid #00a8ff; padding:10px 15px; margin:10px 0; border-radius:0 8px 8px 0; }
+  </style>
+</head>
+<body>
+<div class="header">
+  <div class="logo"><i class="fas fa-camera-retro"></i><span>智能相册排版 · 问题修复版</span></div>
+  <div class="nav">
+    <button id="navEdit" class="on">📝 编辑排版</button>
+    <button id="navPreview">👁️ 排版预览</button>
+    <button id="navExport">📦 导出中心</button>
+    <button id="navHelp" style="background:#f39c12;color:#000;">❓ 帮助</button>
+  </div>
+</div>
+<div class="main" id="mainContainer"></div>
+<div class="cursor-info" id="cursorInfo" style="display:none;">光标: X:0 Y:0</div>
+<div class="toast" id="toast"></div>
+
+<div class="help-modal" id="helpModal">
+  <div class="help-content">
+    <h2>📖 使用帮助</h2>
+    <h3>🚀 快速开始</h3>
+    <div class="highlight-box">
+      <p><strong>1. 上传照片</strong> | <strong>2. 自动排版</strong> | <strong>3. 自由编辑</strong></p>
+    </div>
+    <h3>⌨️ 快捷键</h3>
+    <ul>
+      <li><kbd>Delete</kbd> 或 <kbd>Backspace</kbd> — 删除选中对象</li>
+    </ul>
+    <h3>🔧 图层操作</h3>
+    <p>使用"上移一层"/"下移一层"调整对象的前后遮挡关系</p>
+    <h3>📄 跨页移动</h3>
+    <p>选中对象 → 选择目标页面 → 点击"移动"，两页自动重排</p>
+    <button class="btn btn1" onclick="closeHelp()" style="width:100%;margin-top:20px;">✅ 开始使用</button>
+  </div>
+</div>
+
+<script>
+// ==================== 全局变量 ====================
+const A4_W = 794, A4_H = 1123, PADDING = 28, COLS = 3;
+let canvases = [], photoStore = [], pageJSONs = [], curPage = 0, bgImg = null, activeCanvas = null, addMode = null;
+
+function toast(m) { const t = document.getElementById('toast'); if (!t) return; t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2000); }
+function createBlankPageJSON() { const sc = new fabric.StaticCanvas(null, { width: A4_W, height: A4_H }); sc.backgroundColor = '#ffffff'; sc.renderAll(); const j = JSON.stringify(sc.toJSON()); sc.dispose(); return j; }
+function savePageJSON(idx, fc) { if (idx >= 0 && idx < pageJSONs.length && fc) { try { pageJSONs[idx] = JSON.stringify(fc.toJSON()); } catch(e) {} } }
+function saveAllPages() { canvases.forEach((fc, i) => { if (fc) savePageJSON(i, fc); }); }
+
+// ==================== 帮助弹窗 ====================
+function openHelp() { document.getElementById('helpModal').style.display = 'flex'; }
+function closeHelp() { document.getElementById('helpModal').style.display = 'none'; }
+document.getElementById('navHelp').addEventListener('click', openHelp);
+
+// ==================== 全局 Delete 键监听（修复3：始终有效） ====================
+document.addEventListener('keydown', function(e) {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && 
+      !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+    if (activeCanvas) {
+      const obj = activeCanvas.getActiveObject();
+      if (obj) {
+        activeCanvas.remove(obj);
+        activeCanvas.discardActiveObject();
+        activeCanvas.renderAll();
+        savePageJSON(curPage, activeCanvas);
+        toast('🗑️ 已删除');
+        e.preventDefault();
+      }
+    }
+  }
+});
+
+// ==================== 画布事件 ====================
+function bindCanvasEvents(fc, pageIndex) {
+  if (!fc) return;
+  fc.off();
+  fc.on('object:modified', () => { fc.renderAll(); savePageJSON(pageIndex, fc); });
+  fc.on('object:added', () => { fc.renderAll(); savePageJSON(pageIndex, fc); });
+  fc.on('object:removed', () => { fc.renderAll(); savePageJSON(pageIndex, fc); });
+  fc.on('mouse:move', (opt) => {
+    const p = fc.getPointer(opt.e);
+    const ci = document.getElementById('cursorInfo');
+    if (ci) { ci.style.display = 'block'; ci.textContent = `光标: X:${Math.round(p.x)} Y:${Math.round(p.y)}`; }
+  });
+  fc.on('mouse:out', () => { const ci = document.getElementById('cursorInfo'); if (ci) ci.style.display = 'none'; });
+  fc.on('mouse:down', (opt) => {
+    if (addMode && !opt.target && activeCanvas === fc) {
+      const pointer = fc.getPointer(opt.e);
+      if (addMode === 'text') addTextAt(pointer.x, pointer.y);
+      else if (addMode === 'sticker') addStickerAt(pointer.x, pointer.y);
+    }
+  });
+  fc.on('selection:created', updateProp);
+  fc.on('selection:updated', updateProp);
+}
+
+// ==================== 更新移动目标下拉菜单（修复1：独立函数，可重复调用） ====================
+function updateMoveToPageSelect() {
+  const moveSel = document.getElementById('moveToPage');
+  if (!moveSel) return;
+  // 保存当前选中的值
+  const currentVal = moveSel.value;
+  moveSel.innerHTML = '<option value="-1">选择页面...</option>';
+  pageJSONs.forEach((_, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `第${i+1}页`;
+    moveSel.appendChild(opt);
+  });
+  // 恢复之前的选择（如果仍然有效）
+  if (currentVal && parseInt(currentVal) < pageJSONs.length) {
+    moveSel.value = currentVal;
+  }
+}
+
+// ==================== 渲染页面 ====================
+function renderAllPagesSync() {
+  const scroll = document.getElementById('canvasScroll');
+  if (!scroll) return;
+  scroll.innerHTML = '';
+  canvases = [];
+  if (!pageJSONs.length) pageJSONs = [createBlankPageJSON()];
+  
+  for (let i = 0; i < pageJSONs.length; i++) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'page-container';
+    wrapper.style.width = A4_W + 'px';
+    wrapper.style.height = A4_H + 'px';
+    
+    const label = document.createElement('div');
+    label.className = 'page-label';
+    label.textContent = `— 第 ${i + 1} 页 —`;
+    wrapper.appendChild(label);
+    
+    const canvasEl = document.createElement('canvas');
+    canvasEl.id = `pageCanvas${i}`;
+    canvasEl.width = A4_W;
+    canvasEl.height = A4_H;
+    canvasEl.style.display = 'block';
+    wrapper.appendChild(canvasEl);
+    scroll.appendChild(wrapper);
+    
+    const fc = new fabric.Canvas(canvasEl, {
+      width: A4_W, height: A4_H,
+      backgroundColor: '#ffffff',
+      selection: true,
+      preserveObjectStacking: true,
+      renderOnAddRemove: false
+    });
+    
+    try {
+      const jsonData = JSON.parse(pageJSONs[i]);
+      fc.loadFromJSON(jsonData, () => {
+        fc.renderAll();
+        if (i === curPage) activeCanvas = fc;
+      });
+    } catch(e) {
+      fc.backgroundColor = '#ffffff';
+      fc.renderAll();
+    }
+    
+    bindCanvasEvents(fc, i);
+    canvases.push(fc);
+  }
+  
+  if (!activeCanvas && canvases.length > 0 && curPage < canvases.length) {
+    activeCanvas = canvases[curPage];
+  }
+  
+  if (bgImg) applyBgToAllCanvases();
+  refreshTabs();
+  updateMoveToPageSelect(); // 修复1：渲染后更新下拉菜单
+}
+
+// ==================== 页面管理 ====================
+function setActivePage(i) {
+  if (i >= 0 && i < canvases.length) {
+    saveAllPages();
+    curPage = i;
+    activeCanvas = canvases[i];
+    refreshTabs();
+    const target = document.getElementById(`pageCanvas${i}`);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+function addNewPage() {
+  saveAllPages();
+  pageJSONs.push(createBlankPageJSON());
+  curPage = pageJSONs.length - 1;
+  renderAllPagesSync();
+  updateMoveToPageSelect();
+  toast('✅ 新页面已添加');
+}
+
+function refreshTabs() {
+  const c = document.getElementById('pageTabs');
+  if (!c) return;
+  c.innerHTML = pageJSONs.map((_, i) => `<span class="page-tab${i===curPage?' on':''}" data-p="${i}">第${i+1}页</span>`).join('');
+  c.querySelectorAll('.page-tab').forEach(t => { t.onclick = function() { setActivePage(parseInt(this.dataset.p)); }; });
+}
+
+// ==================== 视图渲染 ====================
+function switchView(v) {
+  document.querySelectorAll('.nav button').forEach(b => { if (b.id !== 'navHelp') b.classList.remove('on'); });
+  if (v !== 'Help') document.getElementById('nav'+v).classList.add('on');
+  const mc = document.getElementById('mainContainer');
+  if (v === 'Edit') renderEdit(mc);
+  else if (v === 'Preview') renderPreview(mc);
+  else if (v === 'Export') renderExport(mc);
+}
+
+function renderEdit(mc) {
+  mc.innerHTML = `
+    <div class="sidebar">
+      <div class="card">
+        <h3><i class="fas fa-upload"></i>上传照片</h3>
+        <div class="upload-zone" id="uploadZone"><i class="fas fa-images fa-2x"></i><p>点击或拖拽上传</p></div>
+        <input type="file" id="fileIn" multiple accept="image/*" hidden>
+        <label style="display:flex;align-items:center;font-size:12px;margin-top:6px;color:#8899bb;"><input type="checkbox" id="autoLayout" checked> 上传后自动排版</label>
+      </div>
+      <div class="card">
+        <h3><i class="fas fa-list"></i>照片列表 (${photoStore.length}张)</h3>
+        <div class="photo-list" id="photoList"><p style="color:#5a6c84;">暂无照片</p></div>
+      </div>
+      <div class="card">
+        <h3><i class="fas fa-copy"></i>页面管理</h3>
+        <div class="page-tabs" id="pageTabs"></div>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <button class="btn btn1" onclick="addNewPage()">➕ 添加新页</button>
+          <button class="btn btn2" onclick="reLayoutAll()">🔄 一键重排</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3><i class="fas fa-magic"></i>智能工具</h3>
+        <button class="btn btn1" onclick="smartRearrangeCurrentPage()" style="width:100%;margin-bottom:6px;">📐 智能重排当前页</button>
+        <div style="display:flex;gap:6px;margin-bottom:6px;">
+          <button class="btn btn2" onclick="bringForward()">⬆️ 上移一层</button>
+          <button class="btn btn2" onclick="sendBackward()">⬇️ 下移一层</button>
+        </div>
+        <div style="font-size:12px;color:#8899bb;margin-top:4px;">
+          移动对象到:
+          <select id="moveToPage" class="sel" style="width:auto;display:inline;"><option value="-1">选择页面...</option></select>
+          <button class="btn btn2" onclick="moveObjectToPage(parseInt(document.getElementById('moveToPage').value))" style="display:inline;">移动</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3><i class="fas fa-font"></i>添加文字</h3>
+        <textarea id="textIn" rows="2" class="input" placeholder="输入文字..."></textarea>
+        <div style="display:flex;gap:6px;margin:6px 0;">
+          <select id="fontSel" class="sel"><option>微软雅黑</option><option>黑体</option><option>宋体</option><option>楷体</option><option>Arial</option></select>
+          <input type="number" id="fontSize" value="24" class="input" style="width:60px;">
+          <input type="color" id="fontColor" value="#000000" style="width:36px;height:30px;">
+        </div>
+        <label style="font-size:12px;color:#8899bb;"><input type="checkbox" id="vertical"> 竖排</label>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <button class="btn btn1" onclick="enableAddMode('text')" style="flex:1;">🖱️ 点击放置</button>
+          <button class="btn btn3" onclick="addTextDirect()" style="flex:1;">✏️ 直接添加</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3><i class="fas fa-smile"></i>贴纸</h3>
+        <div class="sticker-grid" id="stickerGrid"></div>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <button class="btn btn1" onclick="enableAddMode('sticker')" style="flex:1;">🖱️ 点击放置</button>
+          <button class="btn btn3" onclick="addStickerDirect()" style="flex:1;">⭐ 直接添加</button>
+        </div>
+        <input type="hidden" id="lastSticker" value="⭐">
+      </div>
+      <div class="card">
+        <h3><i class="fas fa-edit"></i>编辑选中</h3>
+        <div style="display:flex;gap:6px;"><select id="propFont" class="sel"><option>微软雅黑</option><option>黑体</option><option>宋体</option><option>楷体</option><option>Arial</option></select><input type="number" id="propSize" value="24" class="input" style="width:60px;"><input type="color" id="propColor" value="#000000" style="width:36px;"></div>
+        <button class="btn btn1" onclick="applyPropChanges()" style="width:100%;margin-top:6px;">✅ 应用更改</button>
+      </div>
+      <div class="card">
+        <h3><i class="fas fa-fill-drip"></i>背景</h3>
+        <input type="color" id="bgColor" value="#ffffff" onchange="setBgColor(this.value)"><input type="file" id="bgFile" accept="image/*" onchange="setBgImage(this)"><select id="bgMode" onchange="applyBgMode()" class="sel"><option value="stretch">拉伸</option><option value="tile">平铺</option><option value="center">居中</option></select>
+      </div>
+    </div>
+    <div class="canvas-scroll" id="canvasScroll"></div>
+  `;
+  
+  renderAllPagesSync();
+  refreshPhotoList();
+  bindUpload();
+  buildStickers();
+  refreshTabs();
+  // 修复1：确保下拉菜单在 DOM 渲染后立即填充
+  setTimeout(() => updateMoveToPageSelect(), 100);
+}
+
+function renderPreview(mc) {
+  mc.innerHTML = '<div class="preview-grid" id="previewGrid"></div>';
+  const grid = document.getElementById('previewGrid'); if (!grid) return;
+  saveAllPages();
+  const valid = pageJSONs.filter(j => { try { return JSON.parse(j).objects.length > 0; } catch(e) { return false; } });
+  if (!valid.length) { grid.innerHTML = '<p style="color:#8899bb;">无内容</p>'; return; }
+  valid.forEach((json, idx) => {
+    const w = document.createElement('div'); w.className='preview-page'; w.style.width='200px'; w.style.height='282px';
+    w.title=`第${idx+1}页`; w.onclick=()=>{switchView('Edit');setTimeout(()=>setActivePage(idx),300);};
+    const c=document.createElement('canvas'); c.width=200; c.height=282; w.appendChild(c); grid.appendChild(w);
+    const tc=new fabric.StaticCanvas(null,{width:A4_W,height:A4_H});
+    tc.loadFromJSON(JSON.parse(json),()=>{tc.setBackgroundColor('#ffffff',()=>{const img=new Image(); img.onload=()=>c.getContext('2d').drawImage(img,0,0,200,282); img.src=tc.toDataURL({multiplier:0.25}); tc.dispose();});});
+  });
+}
+
+function renderExport(mc) {
+  mc.innerHTML = `<div class="card" style="width:100%;text-align:center;padding:60px;"><div style="font-size:48px;">📄</div><h2 style="color:#cfdff5;">导出中心</h2><div style="display:flex;gap:16px;justify-content:center;"><button class="btn btn1" onclick="exportPDF()">📥导出PDF</button><button class="btn btn2" onclick="importPDF()">📤导入PDF</button></div></div>`;
+}
+
+// ==================== 上传 ====================
+function bindUpload(){const uz=document.getElementById('uploadZone'),fi=document.getElementById('fileIn');if(!uz||!fi)return;uz.onclick=()=>fi.click();uz.ondragover=e=>e.preventDefault();uz.ondrop=e=>{e.preventDefault();handleFiles(e.dataTransfer.files);};fi.onchange=e=>handleFiles(e.target.files);}
+function handleFiles(files){const arr=Array.from(files).filter(f=>f.type.startsWith('image/'));let cnt=0;arr.forEach(f=>{const r=new FileReader();r.onload=function(e){const process=(ds)=>{const exists=photoStore.some(p=>p.dataUrl===e.target.result);if(!exists)photoStore.push({dataUrl:e.target.result,name:f.name,date:ds,id:Date.now()+Math.random()});cnt++;if(cnt>=arr.length){photoStore.sort((a,b)=>a.date.localeCompare(b.date));refreshPhotoList();if(document.getElementById('autoLayout')?.checked)setTimeout(()=>reLayoutAll(),500);}};try{EXIF.getData(f,function(){const dt=EXIF.getTag(this,'DateTimeOriginal')||EXIF.getTag(this,'DateTimeDigitized')||EXIF.getTag(this,'DateTime');process(dt?dt.replace(/(\d{4}):(\d{2}):(\d{2})/,'$1-$2-$3'):new Date(f.lastModified||Date.now()).toISOString().slice(0,10));});}catch(ex){process(new Date(f.lastModified||Date.now()).toISOString().slice(0,10));}};r.readAsDataURL(f);});}
+function refreshPhotoList(){const l=document.getElementById('photoList');if(!l)return;if(!photoStore.length){l.innerHTML='<p style="color:#5a6c84;">暂无</p>';return;}l.innerHTML=photoStore.map((p,i)=>`<div class="photo-item"><img src="${p.dataUrl}"><span class="name">${p.name}<br><span class="date">📅${p.date}</span></span><button class="del" onclick="deletePhoto(${i})">删除</button></div>`).join('');}
+function deletePhoto(i){photoStore.splice(i,1);refreshPhotoList();reLayoutAll();}
+
+// ==================== 排版 ====================
+async function reLayoutAll(){if(!photoStore.length)return;saveAllPages();const imgs=await Promise.all(photoStore.map(p=>new Promise(res=>fabric.Image.fromURL(p.dataUrl,img=>res({img,p})))));const cw=(A4_W-PADDING*(COLS+1))/COLS;const newPages=[];let col=0,ry=PADDING,mh=0;let curSC=new fabric.StaticCanvas(null,{width:A4_W,height:A4_H});curSC.backgroundColor='#ffffff';const fin=()=>{curSC.renderAll();newPages.push(JSON.stringify(curSC.toJSON()));curSC.dispose();curSC=new fabric.StaticCanvas(null,{width:A4_W,height:A4_H});curSC.backgroundColor='#ffffff';};imgs.forEach(({img,p})=>{if(img.width>cw)img.scaleToWidth(cw);const ih=img.getScaledHeight();const dt=new fabric.Textbox(p.date,{fontSize:11,fontFamily:'Microsoft YaHei',fill:'#555',width:cw,textAlign:'center',selectable:false,evented:false});const dh=dt.height+3;if(ry+ih+dh>A4_H-PADDING){fin();col=0;ry=PADDING;mh=0;}const x=PADDING+col*(cw+PADDING),y=ry;img.set({left:x,top:y,cornerColor:'#3498db',cornerSize:8});dt.set({left:x,top:y+ih+2});const g=new fabric.Group([img,dt],{left:x,top:y,cornerColor:'#3498db',cornerSize:8,hasControls:true});g.photoId=p.id;curSC.add(g);mh=Math.max(mh,ih+dh);col++;if(col>=COLS){col=0;ry+=mh+PADDING;mh=0;}});fin();pageJSONs=newPages;curPage=0;renderAllPagesSync();refreshTabs();updateMoveToPageSelect();toast(`✅ 已排版到${pageJSONs.length}页`);}
+function smartRearrangeCurrentPage(){if(!activeCanvas)return toast('⚠️ 请激活页面');const objs=activeCanvas.getObjects();const groups=objs.filter(o=>o.type==='group'&&o.photoId);if(!groups.length)return toast('无照片组');const cw=(A4_W-PADDING*(COLS+1))/COLS;let col=0,ry=PADDING,mh=0;groups.forEach(g=>{const gh=g.height*g.scaleY;if(ry+gh>A4_H-PADDING){col=0;ry+=mh+PADDING;mh=0;}g.set({left:PADDING+col*(cw+PADDING),top:ry});mh=Math.max(mh,gh);col++;if(col>=COLS){col=0;ry+=mh+PADDING;mh=0;}});activeCanvas.renderAll();savePageJSON(curPage,activeCanvas);toast('✅ 已重排');}
+
+// ==================== 跨页移动 ====================
+function moveObjectToPage(targetPageIndex) {
+  if (!activeCanvas) return;
+  if (targetPageIndex < 0 || targetPageIndex >= canvases.length) return toast('⚠️ 请选择有效页面');
+  const obj = activeCanvas.getActiveObject();
+  if (!obj) return toast('⚠️ 请选中对象');
+  
+  activeCanvas.remove(obj);
+  activeCanvas.renderAll();
+  savePageJSON(curPage, activeCanvas);
+  
+  const tc = canvases[targetPageIndex];
+  tc.add(obj);
+  tc.centerObject(obj);
+  tc.renderAll();
+  savePageJSON(targetPageIndex, tc);
+  
+  setTimeout(() => { smartRearrangeCurrentPage(); setTimeout(() => { setActivePage(targetPageIndex); smartRearrangeCurrentPage(); setActivePage(targetPageIndex); }, 300); }, 300);
+  toast(`✅ 已移动并重排`);
+}
+
+// ==================== 图层操作（修复2：确保正确执行） ====================
+function bringForward() {
+  if (!activeCanvas) return toast('⚠️ 请激活页面');
+  const obj = activeCanvas.getActiveObject();
+  if (!obj) return toast('⚠️ 请选中对象');
+  activeCanvas.bringForward(obj);
+  activeCanvas.renderAll();
+  savePageJSON(curPage, activeCanvas);
+  toast('⬆️ 已上移一层');
+}
+
+function sendBackward() {
+  if (!activeCanvas) return toast('⚠️ 请激活页面');
+  const obj = activeCanvas.getActiveObject();
+  if (!obj) return toast('⚠️ 请选中对象');
+  activeCanvas.sendBackwards(obj);
+  activeCanvas.renderAll();
+  savePageJSON(curPage, activeCanvas);
+  toast('⬇️ 已下移一层');
+}
+
+// ==================== 文字/贴纸 ====================
+function enableAddMode(mode){addMode=addMode===mode?null:mode;toast(addMode?`✅ 点击画布放置${mode==='text'?'文字':'贴纸'}`:'模式已关闭');}
+function addTextAt(x,y){if(!activeCanvas)return;const t=document.getElementById('textIn')?.value.trim();if(!t)return toast('⚠️ 请输入文字');const map={'微软雅黑':'Microsoft YaHei','黑体':'SimHei','宋体':'SimSun','楷体':'KaiTi','Arial':'Arial'};const ff=map[document.getElementById('fontSel')?.value]||'Microsoft YaHei';const fs=parseInt(document.getElementById('fontSize')?.value)||24;const fc=document.getElementById('fontColor')?.value||'#000';const vert=document.getElementById('vertical')?.checked;let o;if(vert){const cs=t.split(''),obs=[];let yy=0;cs.forEach(c=>{obs.push(new fabric.Text(c,{left:x,top:y+yy,fontSize:fs,fontFamily:ff,fill:fc}));yy+=fs*1.2;});o=new fabric.Group(obs,{left:x,top:y,cornerColor:'#3498db'});}else{o=new fabric.Textbox(t,{left:x,top:y,fontSize:fs,fontFamily:ff,fill:fc,width:A4_W*0.6,cornerColor:'#3498db'});}activeCanvas.add(o);activeCanvas.setActiveObject(o);activeCanvas.renderAll();savePageJSON(curPage,activeCanvas);toast('✅ 已添加');}
+function addTextDirect(){if(!activeCanvas)return;const t=document.getElementById('textIn')?.value.trim();if(!t)return toast('⚠️ 请输入文字');const map={'微软雅黑':'Microsoft YaHei','黑体':'SimHei','宋体':'SimSun','楷体':'KaiTi','Arial':'Arial'};const ff=map[document.getElementById('fontSel')?.value]||'Microsoft YaHei';const fs=parseInt(document.getElementById('fontSize')?.value)||24;const fc=document.getElementById('fontColor')?.value||'#000';const vert=document.getElementById('vertical')?.checked;const x=200,y=150+Math.random()*100;let o;if(vert){const cs=t.split(''),obs=[];let yy=0;cs.forEach(c=>{obs.push(new fabric.Text(c,{left:x,top:y+yy,fontSize:fs,fontFamily:ff,fill:fc}));yy+=fs*1.2;});o=new fabric.Group(obs,{left:x,top:y,cornerColor:'#3498db'});}else{o=new fabric.Textbox(t,{left:x,top:y,fontSize:fs,fontFamily:ff,fill:fc,width:A4_W*0.6,cornerColor:'#3498db'});}activeCanvas.add(o);activeCanvas.setActiveObject(o);activeCanvas.renderAll();savePageJSON(curPage,activeCanvas);toast('✅ 已添加');}
+function addStickerAt(x,y){if(!activeCanvas)return;const e=document.getElementById('lastSticker')?.value||'⭐';const o=new fabric.Text(e,{left:x,top:y,fontSize:50,fontFamily:'Segoe UI Emoji',fill:'#000',cornerColor:'#3498db'});activeCanvas.add(o);activeCanvas.setActiveObject(o);activeCanvas.renderAll();savePageJSON(curPage,activeCanvas);toast('✅ 已添加');}
+function addStickerDirect(){if(!activeCanvas)return;const e=document.getElementById('lastSticker')?.value||'⭐';const o=new fabric.Text(e,{left:200+Math.random()*100,top:200+Math.random()*100,fontSize:50,fontFamily:'Segoe UI Emoji',fill:'#000',cornerColor:'#3498db'});activeCanvas.add(o);activeCanvas.setActiveObject(o);activeCanvas.renderAll();savePageJSON(curPage,activeCanvas);toast('✅ 已添加');}
+function setLastSticker(e){const el=document.getElementById('lastSticker');if(el)el.value=e;toast(`已选择: ${e}`);}
+const stickers=['😀','😂','😍','😎','🥳','😇','🤩','😜','🐶','🐱','🐼','🐨','🐸','🐵','🦊','🐰','🌸','🍀','⭐','❤️','🎈','🎉','🎨','📷','🌟','🔥','💎','🍕','🎂','🍭','🚀','⚽'];
+function buildStickers(){const g=document.getElementById('stickerGrid');if(!g)return;g.innerHTML=stickers.map(s=>`<span onclick="setLastSticker('${s}')">${s}</span>`).join('');}
+
+// ==================== 属性 ====================
+function updateProp(){if(!activeCanvas)return;const o=activeCanvas.getActiveObject();if(!o||(o.type!=='textbox'&&o.type!=='text'))return;const rev={'Microsoft YaHei':'微软雅黑','SimHei':'黑体','SimSun':'宋体','KaiTi':'楷体','Arial':'Arial'};const pf=document.getElementById('propFont'),ps=document.getElementById('propSize'),pc=document.getElementById('propColor');if(pf)pf.value=rev[o.fontFamily]||'微软雅黑';if(ps)ps.value=o.fontSize||24;if(pc)pc.value=o.fill||'#000';}
+function applyPropChanges(){if(!activeCanvas)return toast('⚠️ 请激活页面');const o=activeCanvas.getActiveObject();if(!o)return toast('⚠️ 请选中对象');if(o.type==='textbox'||o.type==='text'){const map={'微软雅黑':'Microsoft YaHei','黑体':'SimHei','宋体':'SimSun','楷体':'KaiTi','Arial':'Arial'};const pf=document.getElementById('propFont'),ps=document.getElementById('propSize'),pc=document.getElementById('propColor');if(pf)o.set('fontFamily',map[pf.value]||'Microsoft YaHei');if(ps)o.set('fontSize',parseInt(ps.value)||24);if(pc)o.set('fill',pc.value||'#000');}activeCanvas.renderAll();savePageJSON(curPage,activeCanvas);toast('✅ 已更新');}
+
+// ==================== 背景 ====================
+function setBgColor(c){canvases.forEach(fc=>{if(fc){fc.backgroundColor=c;fc.renderAll();}});saveAllPages();}
+function setBgImage(i){if(!i.files||!i.files[0])return;const r=new FileReader();r.onload=function(e){fabric.Image.fromURL(e.target.result,img=>{bgImg=img;applyBgToAllCanvases();});};r.readAsDataURL(i.files[0]);}
+function applyBgToAllCanvases(){if(!bgImg)return;const m=document.getElementById('bgMode')?.value||'stretch';canvases.forEach(fc=>{if(!fc)return;fc.setBackgroundImage(null,fc.renderAll.bind(fc));const o={};if(m==='stretch'){o.scaleX=A4_W/bgImg.width;o.scaleY=A4_H/bgImg.height;}else if(m==='tile')o.repeat='repeat';else{o.left=(A4_W-bgImg.width)/2;o.top=(A4_H-bgImg.height)/2;}fc.setBackgroundImage(bgImg,fc.renderAll.bind(fc),o);});}
+function applyBgMode(){applyBgToAllCanvases();}
+
+// ==================== 导出 ====================
+function exportPDF(){saveAllPages();const {jsPDF}=window.jspdf;const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});const valid=pageJSONs.filter(j=>{try{return JSON.parse(j).objects.length>0}catch(e){return false;}});if(!valid.length)return toast('无内容');valid.forEach((json,i)=>{const tc=new fabric.StaticCanvas(null,{width:A4_W,height:A4_H});tc.loadFromJSON(JSON.parse(json),()=>{tc.setBackgroundColor('#ffffff',()=>{if(i>0)pdf.addPage();pdf.addImage(tc.toDataURL({format:'png',multiplier:2}),'PNG',0,0,pdf.internal.pageSize.getWidth(),pdf.internal.pageSize.getHeight());if(i===valid.length-1){pdf.save('排版结果.pdf');tc.dispose();toast('✅ PDF已导出');}else tc.dispose();});});});}
+function importPDF(){const inp=document.createElement('input');inp.type='file';inp.accept='.pdf';inp.onchange=async e=>{const f=e.target.files[0];if(!f)return;const buf=await f.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;saveAllPages();for(let i=1;i<=pdf.numPages;i++){const pg=await pdf.getPage(i);const vp=pg.getViewport({scale:2});const tc=document.createElement('canvas');tc.width=vp.width;tc.height=vp.height;await pg.render({canvasContext:tc.getContext('2d'),viewport:vp}).promise;const img=await new Promise(res=>fabric.Image.fromURL(tc.toDataURL('image/png'),res));const s=Math.min(A4_W/img.width,A4_H/img.height);img.set({scaleX:s,scaleY:s,left:0,top:0});const sc=new fabric.StaticCanvas(null,{width:A4_W,height:A4_H});sc.backgroundColor='#ffffff';sc.add(img);sc.renderAll();pageJSONs.push(JSON.stringify(sc.toJSON()));sc.dispose();}renderAllPagesSync();updateMoveToPageSelect();toast(`✅ 已导入 ${pdf.numPages} 页`);};inp.click();}
+
+// ==================== 启动 ====================
+pageJSONs = [createBlankPageJSON()];
+switchView('Edit');
+document.getElementById('navEdit').onclick = () => switchView('Edit');
+document.getElementById('navPreview').onclick = () => switchView('Preview');
+document.getElementById('navExport').onclick = () => switchView('Export');
+</script>
+</body>
+</html>
